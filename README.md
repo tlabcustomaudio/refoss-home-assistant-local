@@ -59,6 +59,47 @@ The key belongs to **your account**: one key for all your plugs. You are reading
 
 ---
 
+## Two ways to do it
+
+- **By hand:** follow steps 1–5 below.
+- **With an AI assistant** doing the computer part for you: see the next section, then do only the phone steps yourself.
+
+## Doing it with an AI assistant
+
+A coding assistant that can run commands on your computer (Claude Code, Codex CLI, Cursor, etc.) can do the computer side for you: install mitmproxy, find your IP, open and close the firewall port, start the capture, and add the plugs to Home Assistant. You only tap on the phone.
+
+Paste this prompt:
+
+```text
+Help me add my Refoss smart plugs to Home Assistant locally, following
+https://github.com/tlabcustomaudio/refoss-home-assistant-local (read its README first).
+
+Rules:
+- Never ask for, type or store my Refoss password. I log in on the phone myself.
+- Never print the account key in full: show it only masked (first 3 + last 3 characters).
+  Read it from refoss-key.txt when you need it; don't write it anywhere else.
+- Before changing my firewall or installing anything, tell me what you're about to do.
+- As soon as the key is captured: stop mitmproxy, close the firewall port, delete ~/.mitmproxy,
+  and walk me through undoing the proxy and removing the certificate on my phone.
+
+Steps:
+1. Check that mitmproxy is installed (install it if not) and download refoss_key.py from the repo.
+2. Tell me this computer's IP address, open port 8080 to my local network only,
+   and start: mitmdump -q --listen-port 8080 -s refoss_key.py
+3. Give me the phone steps for my phone model (I'll tell you: iPhone or Android), one at a time,
+   and wait while I do them.
+4. When the key is captured, do the cleanup above.
+5. Then help me add each plug in Home Assistant with Meross LAN (through the UI, or through
+   the Home Assistant API if I give you a token), matching plugs by MAC address.
+```
+
+Tips:
+- Use an assistant that runs **on your computer**. Don't paste the key into a web chat.
+- An assistant with terminal access can read `refoss-key.txt`: that's why the prompt forbids printing it. Watch what it does, and stop it if it tries to send the key anywhere.
+- If you give it a Home Assistant token for step 5, create a dedicated one (profile → Security → Long-lived access tokens) and delete it when you're done.
+
+---
+
 ## Step 1 — Install Meross LAN in Home Assistant
 
 1. HACS → search **Meross LAN** → Download → restart Home Assistant.
@@ -77,8 +118,10 @@ Install mitmproxy (once):
 Download this repo, open a terminal in its folder and run:
 
 ```bash
-mitmdump --listen-port 8080 -s refoss_key.py
+mitmdump -q --listen-port 8080 -s refoss_key.py
 ```
+
+`-q` hides the phone's normal traffic, so the terminal only shows what matters: the device list and the key.
 
 Find your computer's IP address (you'll type it on the phone):
 
@@ -124,9 +167,15 @@ The menu names change a little between brands (Samsung, Pixel, Xiaomi…). If yo
 
 > Android only lets apps trust a certificate you install yourself if the app allows it, and many apps don't. If the terminal stays silent after login, use an iPhone: that is the tested path.
 
-### What you should see
+### Capturing the data: what happens and what you see
 
-In the terminal, right after logging in:
+As soon as you log in, the app asks the Refoss cloud *"who is this user?"*. The answer (`/v1/Auth/signIn`) contains, among other things, your **account key**:
+
+```json
+{"apiStatus": 0, "data": {"userid": "…", "email": "…", "key": "3f9••••••••••••••••••••••••••a1c", "token": "…", "domain": "https://iotx-eu.refoss.net"}}
+```
+
+Right after, the app downloads your device list (`/v1/Device/devList`). The script reads those two answers and nothing else:
 
 ```
 Your devices (match the MAC suffix in your router to find each IP):
@@ -134,9 +183,33 @@ Your devices (match the MAC suffix in your router to find each IP):
   Aquarium                     mss210   MAC aa:bb:cc:44:55:66  online
 
 *** Refoss key captured: 3f9…a1c (32 chars), saved to /…/refoss-key.txt ***
+*** Cloud region: https://iotx-eu.refoss.net. You can stop mitmproxy now (Ctrl+C) and undo the phone settings. ***
 ```
 
-Stop mitmproxy with **Ctrl+C**.
+- **Nothing appears?** You're probably still logged in: the app only signs in when you log out and back in. Also check the certificate is trusted (step 3).
+- **Only the device list appears, no key?** Log out and in once more. The key only travels in the sign-in answer.
+- Stop mitmproxy with **Ctrl+C**.
+
+**Reading the key** (you paste it in step 5):
+
+| System | Command |
+|---|---|
+| macOS / Linux | `cat refoss-key.txt` |
+| Windows | `type refoss-key.txt` |
+
+It is 32 letters and digits, one line.
+
+<details>
+<summary><b>Prefer to see it with your own eyes? Manual capture with mitmweb, no script</b></summary>
+
+1. Instead of `mitmdump`, start `mitmweb --listen-port 8080`. A page opens in the browser (http://127.0.0.1:8081) showing every request as it happens.
+2. Do step 3 on the phone (proxy, certificate, log out/in).
+3. In the **Search/filter** box type `signIn`.
+4. Click the `POST …/v1/Auth/signIn` line → **Response** tab → find `"key": "…"`. That's it.
+5. Close mitmweb.
+
+Unlike the script, mitmweb **keeps the whole session in memory while it's open**, including what the phone sent (your password). Close it as soon as you have the key, and don't save the flows.
+</details>
 
 ---
 
