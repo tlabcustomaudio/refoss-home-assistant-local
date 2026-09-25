@@ -1,0 +1,4 @@
+refoss-key.txt
+*.key
+__pycache__/
+VIDEO.md
